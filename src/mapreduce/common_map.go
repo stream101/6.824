@@ -67,6 +67,7 @@ func doMap(
     for _, kv := range kv_slice{
         key := kv.Key
         output_name := reduceName(jobName, mapTaskNumber, ihash(key) % nReduce)
+        //fmt.Printf("map output %v\n", output_name)
         out, err := os.OpenFile(output_name, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
         if err != nil {
             log.Fatal(err)

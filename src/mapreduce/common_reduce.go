@@ -4,6 +4,7 @@ import (
     "encoding/json"
     "log"
     "sort"
+    "fmt"
 )
 
 // doReduce manages one reduce task: it reads the intermediate
@@ -50,7 +51,8 @@ func doReduce(
 	// file.Close()
 	//
 
-    out, err := os.OpenFile(outFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    out, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0644)
+    fmt.Printf("reduce output %v\n", outFile)
     defer out.Close()
     enc := json.NewEncoder(out)
     if (err != nil) {
@@ -58,15 +60,16 @@ func doReduce(
     }
 
     //parse map intermediate files one by one
+    //save the values of the same key
+    m := make(map[string][]string)
     for i:=0; i<nMap; i++ {
         inFile := reduceName(jobName, i, reduceTaskNumber)
+        //fmt.Printf("reduce input %v\n", inFile)
         in, err := os.OpenFile(inFile, os.O_RDONLY, 0644)
         if (err != nil) {
             log.Fatal(err)
         }
         dec := json.NewDecoder(in)
-        //save the values of the same key
-        m := make(map[string][]string)
         for dec.More() {
             var kv KeyValue
             err := dec.Decode(&kv)
@@ -77,18 +80,17 @@ func doReduce(
             m[kv.Key] = append(m[kv.Key], kv.Value)
         }
 
-        //sort key
-        keys := make([]string, 0, len(m))
-        for k := range m{
-            keys = append(keys, k)
-        }
-        sort.Strings(keys)
-
-        for _, key := range keys {
-            res := reduceF(key, m[key])
-            enc.Encode(KeyValue{key, res})
-        }
-
         in.Close()
+    }
+    //sort key
+    keys := make([]string, 0, len(m))
+    for k := range m{
+        keys = append(keys, k)
+    }
+    sort.Strings(keys)
+
+    for _, key := range keys {
+        res := reduceF(key, m[key])
+        enc.Encode(KeyValue{key, res})
     }
 }

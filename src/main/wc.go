@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"mapreduce"
 	"os"
+    "strings"
+    "strconv"
+    "unicode"
 )
 
 //
@@ -14,7 +17,16 @@ import (
 // of key/value pairs.
 //
 func mapF(filename string, contents string) []mapreduce.KeyValue {
-	// TODO: you have to write this function
+    fmt.Printf("mapF input %v\n", filename)
+    notLetter := func(c rune) bool {
+        return !unicode.IsLetter(c)
+    }
+    words := strings.FieldsFunc(contents, notLetter)
+    var kv_slice []mapreduce.KeyValue
+    for _,word := range words {
+        kv_slice = append(kv_slice, mapreduce.KeyValue{word, "1"})
+    }
+    return kv_slice
 }
 
 //
@@ -24,6 +36,7 @@ func mapF(filename string, contents string) []mapreduce.KeyValue {
 //
 func reduceF(key string, values []string) string {
 	// TODO: you also have to write this function
+    return strconv.Itoa(len(values))
 }
 
 // Can be run in 3 ways:
