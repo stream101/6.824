@@ -5,6 +5,22 @@ import (
     "sync"
 )
 
+type TaskDone struct{
+    mux sync.Mutex
+    count int
+}
+
+func (t *TaskDone) value() int {
+    t.mux.Lock()
+    defer t.mux.Unlock()
+    return t.count
+}
+
+func (t *TaskDone) inc() {
+    t.mux.Lock()
+    defer t.mux.Unlock()
+    t.count ++
+}
 //
 // schedule() starts and waits for all tasks in the given phase (Map
 // or Reduce). the mapFiles argument holds the names of the files that
@@ -15,10 +31,15 @@ import (
 // existing registered workers (if any) and new ones as they register.
 //
 func execTask(addr string, task_args DoTaskArgs, registerChan chan string,
-                wg *sync.WaitGroup) {
-    defer wg.Done()
-    call(addr, "Worker.DoTask", task_args, nil)
-    //here need to use non-blocking sending. When all the task is finished,
+        queue chan int, td *TaskDone) {
+    success := call(addr, "Worker.DoTask", task_args, nil)
+    if success == true {
+        td.inc()
+    } else {
+        //put self to task queue
+        queue <- task_args.TaskNumber
+    }
+    //Important: here need to use non-blocking sending. When all the task is finished,
     //schedule() will not receive from channel.
     select {
         case registerChan <- addr:
@@ -47,14 +68,28 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	// Remember that workers may fail, and that any given worker may finish
 	// multiple tasks.
 	//
-    var wg sync.WaitGroup
+    td := new(TaskDone)
+    td.count = 0
+    //init task queue
+    var queue = make(chan int, ntasks)
     for i:=0; i<ntasks; i++ {
-        addr := <-registerChan
-        task_args := DoTaskArgs{jobName, mapFiles[i], phase, i, n_other}
-        wg.Add(1)
-       // go call(addr, "Worker.DoTask", task_args, nil)
-        go execTask(addr, task_args, registerChan, &wg)
+        queue <- i
     }
-    wg.Wait()
+
+    for td.value() < ntasks {
+        //Important: here need to use non-blocking channel receiver.
+        //master read td, and goroutine write td.
+        // these two threads are concurrent. If blocking channel, When td.value() == 99, 
+        // it will block at <- queue. Although goroutine later updates
+        // td.count to 100, the main thread can never read the new value
+        select {
+            case taskIndex := <-queue:
+                task_args := DoTaskArgs{jobName, mapFiles[taskIndex], phase, taskIndex, n_other}
+                addr := <-registerChan
+                go execTask(addr, task_args, registerChan, queue, td)
+            default:
+                //do nothing
+        }
+    }
 	fmt.Printf("Schedule: %v phase done\n", phase)
 }
